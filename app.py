@@ -1,4 +1,7 @@
 import streamlit as st
+from pathlib import Path
+
+from auth_storage import register_user, validate_login
 
 
 st.set_page_config(
@@ -7,10 +10,16 @@ st.set_page_config(
     layout="centered",
 )
 
+USERS_CSV = Path("data") / "users.csv"
+
 
 def init_state() -> None:
     if "page" not in st.session_state:
         st.session_state.page = "home"
+    if "logged_in" not in st.session_state:
+        st.session_state.logged_in = False
+    if "auth_user" not in st.session_state:
+        st.session_state.auth_user = ""
 
 
 def go_to(page: str) -> None:
@@ -46,14 +55,6 @@ def render_global_style() -> None:
             box-shadow: 0 20px 45px rgba(138, 22, 1, 0.08);
         }
 
-        .eyebrow {
-            color: var(--primary);
-            font-size: 0.95rem;
-            font-weight: 700;
-            letter-spacing: 0.08em;
-            text-transform: uppercase;
-            margin-bottom: 0.75rem;
-        }
 
         .title {
             color: var(--text-main);
@@ -119,11 +120,13 @@ def render_global_style() -> None:
         }
 
         div[data-testid="stButton"] > button {
+            height: 2.8rem;
             border-radius: 14px;
             border: 1px solid var(--primary);
             color: var(--primary);
             font-weight: 700;
             min-height: 2.8rem;
+            box-sizing: border-box;
         }
 
         div[data-testid="stButton"] > button[kind="primary"] {
@@ -131,9 +134,17 @@ def render_global_style() -> None:
             color: white;
         }
 
-        div[data-testid="stButton"] > button.signup-button {
+        div[data-testid="stButton"] > button[kind="secondary"] {
             background: white;
             color: var(--primary);
+        }
+
+        div[data-testid="stButton"] > button:disabled {
+            background: #efe8e5;
+            color: #a88d86;
+            border-color: #d7c4bf;
+            cursor: not-allowed;
+            opacity: 1;
         }
 
         @media (max-width: 640px) {
@@ -162,9 +173,6 @@ def render_home() -> None:
         """
         <section class="hero-card">
             <div class="title">광운대학교 퀴즈</div>
-            <div class="subtitle">
-                광운대학교에 대한 재미있는 TMI를 퀴즈로 풀어보는 웹 애플리케이션입니다.
-            </div>
             <div class="info-grid">
                 <div class="info-box">
                     <div class="label">학번</div>
@@ -181,6 +189,9 @@ def render_home() -> None:
         unsafe_allow_html=True,
     )
 
+    if st.session_state.logged_in:
+        st.success(f"{st.session_state.auth_user} 로그인 상태입니다.")
+
     st.write("")
     left, right = st.columns(2)
 
@@ -190,30 +201,26 @@ def render_home() -> None:
             st.rerun()
 
     with right:
-        st.markdown(
-            """
-            <style>
-            div[data-testid="stButton"] > button[kind="secondary"] {
-                background: white;
-                color: #8A1601;
-            }
-            </style>
-            """,
-            unsafe_allow_html=True,
-        )
         if st.button("회원가입", use_container_width=True):
             go_to("signup")
             st.rerun()
+
+    st.write("")
+    st.button(
+        "퀴즈 풀기",
+        use_container_width=True,
+        type="primary" if st.session_state.logged_in else "secondary",
+        disabled=not st.session_state.logged_in,
+    )
 
 
 def render_login_page() -> None:
     st.markdown(
         """
         <section class="form-card">
-            <div class="eyebrow">Login</div>
             <div class="form-title">로그인</div>
             <div class="form-description">
-                학번과 이름을 입력해 광운대학교 TMI 퀴즈에 접속하세요.
+                학번과 비밀번호를 입력해주세요.
             </div>
         </section>
         """,
@@ -221,12 +228,20 @@ def render_login_page() -> None:
     )
 
     with st.form("login_form"):
-        student_id = st.text_input("학번", placeholder="예: admin")
-        name = st.text_input("이름", placeholder="1234")
+        student_id = st.text_input("학번", placeholder="예: 2022204038")
+        password = st.text_input("비밀번호", placeholder="비밀번호를 입력하세요", type="password")
         submitted = st.form_submit_button("로그인", type="primary", use_container_width=True)
 
     if submitted:
-        st.success(f"{name or '사용자'} 로그인 화면이 연결되었습니다.")
+        if not student_id or not password:
+            st.error("학번과 비밀번호를 모두 입력해주세요.")
+        elif validate_login(USERS_CSV, student_id, password):
+            st.session_state.logged_in = True
+            st.session_state.auth_user = student_id
+            go_to("home")
+            st.rerun()
+        else:
+            st.error("학번 또는 비밀번호가 올바르지 않습니다.")
 
     if st.button("메인으로 돌아가기", use_container_width=True):
         go_to("home")
@@ -237,7 +252,6 @@ def render_signup_page() -> None:
     st.markdown(
         """
         <section class="form-card">
-            <div class="eyebrow">Sign Up</div>
             <div class="form-title">회원가입</div>
             <div class="form-description">
                 퀴즈 참여를 위한 기본 정보를 입력하는 회원가입 페이지입니다.
@@ -249,11 +263,16 @@ def render_signup_page() -> None:
 
     with st.form("signup_form"):
         student_id = st.text_input("학번", placeholder="예: 2022204038")
-        name = st.text_input("이름", placeholder="예: 1234")
+        password = st.text_input("비밀번호", placeholder="비밀번호를 입력하세요", type="password")
         submitted = st.form_submit_button("회원가입", type="primary", use_container_width=True)
 
     if submitted:
-        st.success(f"{name or '사용자'} 회원가입 화면이 연결되었습니다.")
+        if not student_id or not password:
+            st.error("학번과 비밀번호를 모두 입력해주세요.")
+        elif register_user(USERS_CSV, student_id, password):
+            st.success("회원가입이 완료되었습니다. 이제 로그인할 수 있습니다.")
+        else:
+            st.error("이미 가입된 학번입니다.")
 
     if st.button("메인으로 돌아가기", use_container_width=True):
         go_to("home")
