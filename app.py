@@ -246,10 +246,12 @@ def render_global_style() -> None:
         .chart-band {
             min-height: 100%;
             padding: 1.6rem 1.6rem 1.2rem;
+            background: #F8ECE8;
+            box-shadow: 0 8px 0 rgba(78, 13, 0, 0.12);
         }
 
         .chart-title {
-            color: var(--text-main);
+            color: var(--panel);
             font-family: 'Black Han Sans', sans-serif;
             font-size: 1.7rem;
             text-align: center;
@@ -257,10 +259,35 @@ def render_global_style() -> None:
         }
 
         .chart-caption {
-            color: var(--text-soft);
+            color: #7f4b40;
             text-align: center;
             margin-bottom: 1rem;
             font-size: 0.98rem;
+        }
+
+        .chart-legend {
+            display: flex;
+            justify-content: center;
+            gap: 1.2rem;
+            margin-bottom: 1rem;
+            flex-wrap: wrap;
+        }
+
+        .chart-legend-item {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.45rem;
+            color: #40140b;
+            font-size: 1rem;
+            font-weight: 700;
+            line-height: 1;
+        }
+
+        .chart-legend-dot {
+            width: 0.95rem;
+            height: 0.95rem;
+            border-radius: 999px;
+            display: inline-block;
         }
 
         .status-strip {
@@ -466,17 +493,16 @@ def render_global_style() -> None:
 
 
 def render_home() -> None:
-    render_logo(360)
+    render_logo(300)
     st.markdown(
         """
         <section class="hero-shell">
             <div class="hero-band">
                 <div class="title">광운대학교 퀴즈</div>
-                <div class="subtitle">나는 과연 광운대를 얼마나 알고 있을까?</div>
             </div>
             <div class="hero-meta">
-                <div>학번<strong>2022204038</strong></div>
-                <div>이름<strong>전창현</strong></div>
+                <div><strong>2022204038</strong></div>
+                <div><strong>전창현</strong></div>
             </div>
         </section>
         """,
@@ -605,7 +631,7 @@ def render_quiz_result_page() -> None:
         render_result_chart(st.session_state.quiz_score, total_count)
     left, right = st.columns(2)
     with left:
-        if st.button("다시 설정하기", use_container_width=True):
+        if st.button("다시 풀기", use_container_width=True):
             go_to("quiz_setup")
             st.rerun()
     with right:
@@ -617,15 +643,48 @@ def render_quiz_result_page() -> None:
 
 def build_result_chart(score: int, total: int) -> alt.Chart:
     breakdown = create_result_breakdown(score, total)
+    for item in breakdown:
+        item["label_text"] = f"{item['count']}문제"
     color_scale = alt.Scale(
         domain=["맞춘 문제", "맞추지 못한 문제"],
         range=["#b22308", "#e7bdb3"],
     )
-    return alt.Chart(alt.Data(values=breakdown)).mark_arc(innerRadius=62).encode(
-        theta=alt.Theta("count:Q"),
-        color=alt.Color("label:N", scale=color_scale, legend=alt.Legend(title=None)),
+    base = alt.Chart(alt.Data(values=breakdown)).encode(
+        theta=alt.Theta("count:Q", stack=True),
+        color=alt.Color("label:N", scale=color_scale, legend=None),
         tooltip=["label:N", "count:Q"],
+        order=alt.Order("count:Q", sort="descending"),
     )
+    chart = (
+        base.mark_arc(innerRadius=64, outerRadius=170)
+        .properties(width=360, height=360)
+    )
+    labels = base.mark_text(
+        radius=118,
+        size=30,
+        color="#111111",
+        font="Noto Sans KR",
+        fontWeight=700,
+    ).encode(text="label_text:N")
+    return (chart + labels).configure(
+        background="#F8ECE8",
+        view={"stroke": None, "fill": "#F8ECE8"},
+    )
+
+
+def render_result_chart(score: int, total: int) -> None:
+    # st.markdown(
+    #     """
+    #     <section class="result-shell">
+    #         <div class="chart-band">
+    #             <div class="chart-title">정답 비율</div>
+    #             <div class="chart-caption">맞춘 문제와 놓친 문제를 한눈에 확인하세요.</div>
+    #         </div>
+    #     </section>
+    #     """,
+    #     unsafe_allow_html=True,
+    # )
+    st.altair_chart(build_result_chart(score, total), use_container_width=True)
 
 
 def render_result_chart(score: int, total: int) -> None:
@@ -633,8 +692,16 @@ def render_result_chart(score: int, total: int) -> None:
         """
         <section class="result-shell">
             <div class="chart-band">
-                <div class="chart-title">정답 비율</div>
-                <div class="chart-caption">맞춘 문제와 놓친 문제를 한눈에 확인하세요.</div>
+                <div class="chart-legend">
+                    <div class="chart-legend-item">
+                        <span class="chart-legend-dot" style="background:#b22308;"></span>
+                        <span>맞춘 문제</span>
+                    </div>
+                    <div class="chart-legend-item">
+                        <span class="chart-legend-dot" style="background:#e7bdb3;"></span>
+                        <span>맞추지 못한 문제</span>
+                    </div>
+                </div>
             </div>
         </section>
         """,
