@@ -327,7 +327,7 @@ def render_global_style() -> None:
         }
 
         .survey-shell {
-            width: min(96vw, 1700px);
+            width: min(70vw, 640px);
             margin: 0 0 1.2rem;
             position: relative;
             left: 50%;
@@ -804,6 +804,7 @@ def render_survey_section() -> None:
                 label,
                 SURVEY_OPTIONS,
                 horizontal=True,
+                index=None,
                 key=f"survey_{key}",
             )
         submitted = st.form_submit_button("설문 제출", type="primary", use_container_width=True)
@@ -818,8 +819,16 @@ def render_survey_page() -> None:
         """
         <style>
         div[data-testid="stForm"] {
-            width: min(96vw, 1000px);
+            width: min(70vw, 640px);
             max-width: none;
+        }
+        div[data-testid="stRadio"] label,
+        div[data-testid="stRadio"] p,
+        div[data-testid="stMarkdownContainer"] p {
+            color: #000000 !important;
+        }
+        div[data-testid="stRadio"] {
+            margin-bottom: 8px;
         }
         </style>
         """,
