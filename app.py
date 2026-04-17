@@ -7,10 +7,12 @@ from auth_storage import register_user, validate_login
 from quiz_engine import (
     check_answer,
     create_result_breakdown,
+    get_file_modified_time,
     get_display_answer,
     load_quizzes,
     select_quizzes,
 )
+from session_actions import build_auth_action, logout_user
 
 
 st.set_page_config(
@@ -45,8 +47,18 @@ def init_state() -> None:
         st.session_state.quiz_submitted = False
 
 
+@st.cache_data
+def load_cached_quizzes(
+    csv_path: str,
+    modified_time: float,
+) -> list[dict[str, object]]:
+    _ = modified_time
+    return load_quizzes(Path(csv_path))
+
+
 def get_quiz_bank() -> list[dict[str, object]]:
-    return load_quizzes(QUIZ_CSV)
+    modified_time = get_file_modified_time(QUIZ_CSV)
+    return load_cached_quizzes(str(QUIZ_CSV), modified_time)
 
 
 def go_to(page: str) -> None:
@@ -494,6 +506,7 @@ def render_global_style() -> None:
 
 def render_home() -> None:
     render_logo(300)
+    auth_action = build_auth_action(st.session_state.logged_in)
     st.markdown(
         """
         <section class="hero-shell">
@@ -519,8 +532,15 @@ def render_home() -> None:
     left, right = st.columns(2)
 
     with left:
-        if st.button("로그인", use_container_width=True, type="primary"):
-            go_to("login")
+        if st.button(
+            auth_action["label"],
+            use_container_width=True,
+            type=auth_action["type"],
+        ):
+            if st.session_state.logged_in:
+                logout_user(st.session_state)
+            else:
+                go_to("login")
             st.rerun()
 
     with right:
@@ -643,48 +663,23 @@ def render_quiz_result_page() -> None:
 
 def build_result_chart(score: int, total: int) -> alt.Chart:
     breakdown = create_result_breakdown(score, total)
-    for item in breakdown:
-        item["label_text"] = f"{item['count']}문제"
     color_scale = alt.Scale(
-        domain=["맞춘 문제", "맞추지 못한 문제"],
+        domain=["?? ??", "??? ?? ??"],
         range=["#b22308", "#e7bdb3"],
     )
-    base = alt.Chart(alt.Data(values=breakdown)).encode(
+    chart = alt.Chart(alt.Data(values=breakdown)).encode(
         theta=alt.Theta("count:Q", stack=True),
         color=alt.Color("label:N", scale=color_scale, legend=None),
         tooltip=["label:N", "count:Q"],
         order=alt.Order("count:Q", sort="descending"),
     )
-    chart = (
-        base.mark_arc(innerRadius=64, outerRadius=170)
-        .properties(width=360, height=360)
-    )
-    labels = base.mark_text(
-        radius=118,
-        size=30,
-        color="#111111",
-        font="Noto Sans KR",
-        fontWeight=700,
-    ).encode(text="label_text:N")
-    return (chart + labels).configure(
+    return chart.mark_arc(innerRadius=64, outerRadius=170).properties(
+        width=360,
+        height=360,
+    ).configure(
         background="#F8ECE8",
         view={"stroke": None, "fill": "#F8ECE8"},
     )
-
-
-def render_result_chart(score: int, total: int) -> None:
-    # st.markdown(
-    #     """
-    #     <section class="result-shell">
-    #         <div class="chart-band">
-    #             <div class="chart-title">정답 비율</div>
-    #             <div class="chart-caption">맞춘 문제와 놓친 문제를 한눈에 확인하세요.</div>
-    #         </div>
-    #     </section>
-    #     """,
-    #     unsafe_allow_html=True,
-    # )
-    st.altair_chart(build_result_chart(score, total), use_container_width=True)
 
 
 def render_result_chart(score: int, total: int) -> None:

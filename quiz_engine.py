@@ -26,6 +26,10 @@ def load_quizzes(csv_path: Path) -> list[dict[str, object]]:
     ]
 
 
+def get_file_modified_time(file_path: Path) -> float:
+    return file_path.stat().st_mtime
+
+
 def normalize_text(text: str) -> str:
     cleaned = text.strip().strip('"').strip("'").strip(",")
     return " ".join(cleaned.lower().split())
