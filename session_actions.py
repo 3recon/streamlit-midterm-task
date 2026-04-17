@@ -14,6 +14,8 @@ def clear_quiz_state(session_state: dict[str, object]) -> None:
     session_state["quiz_score"] = 0
     session_state["quiz_feedback"] = None
     session_state["quiz_submitted"] = False
+    session_state["survey_submitted"] = False
+    session_state["survey_message"] = None
 
 
 def logout_user(session_state: dict[str, object]) -> None:

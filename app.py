@@ -13,6 +13,7 @@ from quiz_engine import (
     select_quizzes,
 )
 from session_actions import build_auth_action, logout_user
+from survey_storage import QUESTION_KEYS, save_survey_response
 
 
 st.set_page_config(
@@ -23,7 +24,22 @@ st.set_page_config(
 
 USERS_CSV = Path("data") / "users.csv"
 QUIZ_CSV = Path("data") / "quiz_list.csv"
+SURVEY_CSV = Path("data") / "survey_results.csv"
 LOGO_PATH = Path("kw_logo.png").resolve().as_posix()
+SURVEY_OPTIONS = [
+    "매우 만족함",
+    "만족함",
+    "보통",
+    "불만족함",
+    "매우 불만족함",
+]
+SURVEY_QUESTIONS = [
+    ("communication", "퀴즈 문제 구성"),
+    ("difficulty", "퀴즈 난이도"),
+    ("clarity", "문항과 정답의 명확성"),
+    ("fun", "퀴즈를 푸는 재미"),
+    ("retry", "다시 풀고 싶은 정도"),
+]
 
 
 def init_state() -> None:
@@ -45,6 +61,10 @@ def init_state() -> None:
         st.session_state.quiz_feedback = None
     if "quiz_submitted" not in st.session_state:
         st.session_state.quiz_submitted = False
+    if "survey_submitted" not in st.session_state:
+        st.session_state.survey_submitted = False
+    if "survey_message" not in st.session_state:
+        st.session_state.survey_message = None
 
 
 @st.cache_data
@@ -71,6 +91,8 @@ def reset_quiz_state() -> None:
     st.session_state.quiz_score = 0
     st.session_state.quiz_feedback = None
     st.session_state.quiz_submitted = False
+    st.session_state.survey_submitted = False
+    st.session_state.survey_message = None
 
 
 def start_quiz(count: int) -> None:
@@ -81,6 +103,8 @@ def start_quiz(count: int) -> None:
     st.session_state.quiz_score = 0
     st.session_state.quiz_feedback = None
     st.session_state.quiz_submitted = False
+    st.session_state.survey_submitted = False
+    st.session_state.survey_message = None
     go_to("quiz")
 
 
@@ -300,6 +324,51 @@ def render_global_style() -> None:
             height: 0.95rem;
             border-radius: 999px;
             display: inline-block;
+        }
+
+        .survey-shell {
+            width: min(96vw, 1700px);
+            margin: 0 0 1.2rem;
+            position: relative;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #f3f3f3;
+            padding: 2rem;
+            box-shadow: 0 10px 24px rgba(35, 20, 16, 0.12);
+        }
+
+        .survey-card {
+            background: white;
+            padding: 1.8rem 2rem;
+            box-shadow: 0 8px 20px rgba(35, 20, 16, 0.10);
+        }
+
+        .survey-title {
+            color: #30363d;
+            font-size: 1.05rem;
+            font-weight: 700;
+            margin-bottom: 1rem;
+        }
+
+        .survey-scale {
+            display: grid;
+            grid-template-columns: 1.7fr repeat(5, 1fr);
+            gap: 0.8rem;
+            color: #4a5058;
+            font-size: 0.88rem;
+            font-weight: 700;
+            text-align: center;
+            margin-bottom: 0.8rem;
+        }
+
+        .survey-scale div:first-child {
+            text-align: left;
+        }
+
+        .survey-note {
+            color: #6b717a;
+            font-size: 0.9rem;
+            margin-top: 0.8rem;
         }
 
         .status-strip {
@@ -632,8 +701,8 @@ def render_quiz_page() -> None:
 
 
 def render_quiz_result_page() -> None:
-    render_logo(200)
     total_count = len(st.session_state.quiz_bank)
+    st.markdown('<div style="height:30px;"></div>', unsafe_allow_html=True)
     summary_col, chart_col = st.columns([1.15, 0.85], gap="large")
     with summary_col:
         st.markdown(
@@ -659,12 +728,18 @@ def render_quiz_result_page() -> None:
             reset_quiz_state()
             go_to("home")
             st.rerun()
+    survey_col = st.columns([0.2, 0.6, 0.2])[1]
+    with survey_col:
+        if st.button("퀴즈 만족도 설문조사", use_container_width=True):
+            go_to("quiz_survey")
+            st.rerun()
 
 
 def build_result_chart(score: int, total: int) -> alt.Chart:
     breakdown = create_result_breakdown(score, total)
+    labels = [item["label"] for item in breakdown]
     color_scale = alt.Scale(
-        domain=["?? ??", "??? ?? ??"],
+        domain=labels,
         range=["#b22308", "#e7bdb3"],
     )
     chart = alt.Chart(alt.Data(values=breakdown)).encode(
@@ -703,6 +778,64 @@ def render_result_chart(score: int, total: int) -> None:
         unsafe_allow_html=True,
     )
     st.altair_chart(build_result_chart(score, total), use_container_width=True)
+
+
+def submit_survey(responses: dict[str, str]) -> None:
+    save_survey_response(
+        SURVEY_CSV,
+        student_id=st.session_state.auth_user,
+        score=st.session_state.quiz_score,
+        total=len(st.session_state.quiz_bank),
+        responses=responses,
+    )
+    st.session_state.survey_submitted = True
+    st.session_state.survey_message = "설문이 저장되었습니다."
+
+
+def render_survey_section() -> None:
+    if st.session_state.survey_message:
+        st.success(st.session_state.survey_message)
+    if st.session_state.survey_submitted:
+        return
+    with st.form("survey_form"):
+        responses = {}
+        for key, label in SURVEY_QUESTIONS:
+            responses[key] = st.radio(
+                label,
+                SURVEY_OPTIONS,
+                horizontal=True,
+                key=f"survey_{key}",
+            )
+        submitted = st.form_submit_button("설문 제출", type="primary", use_container_width=True)
+    if submitted:
+        submit_survey(responses)
+        st.rerun()
+
+
+def render_survey_page() -> None:
+    st.markdown('<div style="height:30px;"></div>', unsafe_allow_html=True)
+    st.markdown(
+        """
+        <style>
+        div[data-testid="stForm"] {
+            width: min(96vw, 1000px);
+            max-width: none;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+    render_survey_section()
+    left, right = st.columns(2)
+    with left:
+        if st.button("결과로 돌아가기", use_container_width=True):
+            go_to("quiz_result")
+            st.rerun()
+    with right:
+        if st.button("메인으로 돌아가기", use_container_width=True):
+            reset_quiz_state()
+            go_to("home")
+            st.rerun()
 
 
 def render_login_page() -> None:
@@ -795,3 +928,5 @@ elif st.session_state.page == "quiz":
     render_quiz_page()
 elif st.session_state.page == "quiz_result":
     render_quiz_result_page()
+elif st.session_state.page == "quiz_survey":
+    render_survey_page()
