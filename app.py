@@ -1,8 +1,16 @@
+import altair as alt
 import streamlit as st
 import base64
 from pathlib import Path
 
 from auth_storage import register_user, validate_login
+from quiz_engine import (
+    check_answer,
+    create_result_breakdown,
+    get_display_answer,
+    load_quizzes,
+    select_quizzes,
+)
 
 
 st.set_page_config(
@@ -12,6 +20,7 @@ st.set_page_config(
 )
 
 USERS_CSV = Path("data") / "users.csv"
+QUIZ_CSV = Path("data") / "quiz_list.csv"
 LOGO_PATH = Path("kw_logo.png").resolve().as_posix()
 
 
@@ -22,10 +31,72 @@ def init_state() -> None:
         st.session_state.logged_in = False
     if "auth_user" not in st.session_state:
         st.session_state.auth_user = ""
+    if "quiz_bank" not in st.session_state:
+        st.session_state.quiz_bank = []
+    if "quiz_count" not in st.session_state:
+        st.session_state.quiz_count = 1
+    if "quiz_index" not in st.session_state:
+        st.session_state.quiz_index = 0
+    if "quiz_score" not in st.session_state:
+        st.session_state.quiz_score = 0
+    if "quiz_feedback" not in st.session_state:
+        st.session_state.quiz_feedback = None
+    if "quiz_submitted" not in st.session_state:
+        st.session_state.quiz_submitted = False
+
+
+def get_quiz_bank() -> list[dict[str, object]]:
+    return load_quizzes(QUIZ_CSV)
 
 
 def go_to(page: str) -> None:
     st.session_state.page = page
+
+
+def reset_quiz_state() -> None:
+    st.session_state.quiz_bank = []
+    st.session_state.quiz_index = 0
+    st.session_state.quiz_score = 0
+    st.session_state.quiz_feedback = None
+    st.session_state.quiz_submitted = False
+
+
+def start_quiz(count: int) -> None:
+    quizzes = get_quiz_bank()
+    st.session_state.quiz_count = count
+    st.session_state.quiz_bank = select_quizzes(quizzes, count)
+    st.session_state.quiz_index = 0
+    st.session_state.quiz_score = 0
+    st.session_state.quiz_feedback = None
+    st.session_state.quiz_submitted = False
+    go_to("quiz")
+
+
+def get_current_quiz() -> dict[str, object]:
+    return st.session_state.quiz_bank[st.session_state.quiz_index]
+
+
+def submit_quiz_answer(user_answer: str) -> None:
+    quiz = get_current_quiz()
+    is_correct = check_answer(quiz, user_answer)
+    if is_correct:
+        st.session_state.quiz_score += 1
+    st.session_state.quiz_feedback = {
+        "is_correct": is_correct,
+        "comment": quiz["comment"],
+        "answer": get_display_answer(quiz),
+    }
+    st.session_state.quiz_submitted = True
+
+
+def advance_quiz() -> None:
+    st.session_state.quiz_index += 1
+    st.session_state.quiz_feedback = None
+    st.session_state.quiz_submitted = False
+    if st.session_state.quiz_index >= len(st.session_state.quiz_bank):
+        go_to("quiz_result")
+        return
+    go_to("quiz")
 
 
 def render_logo(width: int) -> None:
@@ -36,7 +107,7 @@ def render_logo(width: int) -> None:
             svg_base64 = base64.b64encode(svg_data.encode("utf-8")).decode("utf-8")
             st.markdown(
                 f"""
-                <div style="text-align:center;">
+                <div style="text-align:center; padding:20px 0;">
                     <img src="data:image/svg+xml;base64,{svg_base64}" width="{width}">
                 </div>
                 """,
@@ -48,14 +119,16 @@ def render_logo(width: int) -> None:
             svg_base64 = base64.b64encode(raw_data).decode("utf-8")
             st.markdown(
                 f"""
-                <div style="text-align:center;">
+                <div style="text-align:center; padding:20px 0;">
                     <img src="data:image/svg+xml;base64,{svg_base64}" width="{width}">
                 </div>
                 """,
                 unsafe_allow_html=True,
             )
             return
+        st.markdown('<div style="padding:20px 0;"></div>', unsafe_allow_html=True)
         st.image(str(LOGO_PATH), width=width)
+        st.markdown('<div style="padding:20px 0;"></div>', unsafe_allow_html=True)
 
 
 def render_global_style() -> None:
@@ -97,7 +170,8 @@ def render_global_style() -> None:
         }
 
         .hero-shell,
-        .form-shell {
+        .form-shell,
+        .result-shell {
             width: min(100%, 1020px);
             margin: 0 auto;
         }
@@ -121,7 +195,8 @@ def render_global_style() -> None:
         }
 
         .hero-band,
-        .form-band {
+        .form-band,
+        .chart-band {
             background: var(--panel);
             padding: 2rem 2.5rem;
             margin: 0 auto 1.6rem;
@@ -166,6 +241,26 @@ def render_global_style() -> None:
             margin: 0;
             text-align: center;
             font-size: 1.08rem;
+        }
+
+        .chart-band {
+            min-height: 100%;
+            padding: 1.6rem 1.6rem 1.2rem;
+        }
+
+        .chart-title {
+            color: var(--text-main);
+            font-family: 'Black Han Sans', sans-serif;
+            font-size: 1.7rem;
+            text-align: center;
+            margin-bottom: 0.3rem;
+        }
+
+        .chart-caption {
+            color: var(--text-soft);
+            text-align: center;
+            margin-bottom: 1rem;
+            font-size: 0.98rem;
         }
 
         .status-strip {
@@ -410,17 +505,142 @@ def render_home() -> None:
     st.write("")
     quiz_col = st.columns([0.15, 0.7, 0.15])[1]
     with quiz_col:
-        st.button(
+        quiz_clicked = st.button(
             "퀴즈 풀기",
             use_container_width=True,
             type="primary" if st.session_state.logged_in else "secondary",
             disabled=not st.session_state.logged_in,
         )
+        if quiz_clicked and st.session_state.logged_in:
+            go_to("quiz_setup")
+            st.rerun()
         if not st.session_state.logged_in:
             st.markdown(
                 '<div class="quiz-disabled-note">로그인 후 퀴즈를 시작할 수 있습니다.</div>',
                 unsafe_allow_html=True,
             )
+
+
+def render_quiz_setup_page() -> None:
+    render_logo(220)
+    quizzes = get_quiz_bank()
+    max_count = len(quizzes)
+    st.markdown(
+        """
+        <section class="form-shell">
+            <div class="form-band">
+                <div class="form-title">퀴즈 설정</div>
+                <div class="form-description">풀 퀴즈 개수를 선택한 뒤 시작하세요.</div>
+            </div>
+        </section>
+        """,
+        unsafe_allow_html=True,
+    )
+    selected_count = st.slider("풀 퀴즈 개수 선택", 1, max_count, min(5, max_count))
+    start_col, back_col = st.columns(2)
+    with start_col:
+        if st.button("퀴즈 시작", use_container_width=True, type="primary"):
+            start_quiz(selected_count)
+            st.rerun()
+    with back_col:
+        if st.button("메인으로 돌아가기", use_container_width=True):
+            go_to("home")
+            st.rerun()
+
+
+def render_quiz_page() -> None:
+    render_logo(180)
+    quiz = get_current_quiz()
+    current_number = st.session_state.quiz_index + 1
+    total_count = len(st.session_state.quiz_bank)
+    st.markdown(
+        f"""
+        <section class="form-shell">
+            <div class="form-band">
+                <div class="form-title">문제 {current_number} / {total_count}</div>
+                <div class="form-description">{quiz["quiz"]}</div>
+            </div>
+        </section>
+        """,
+        unsafe_allow_html=True,
+    )
+    if not st.session_state.quiz_submitted:
+        with st.form(f"quiz_form_{st.session_state.quiz_index}"):
+            user_answer = st.text_input("정답 입력", placeholder="정답을 입력하세요")
+            submitted = st.form_submit_button("정답 제출", type="primary", use_container_width=True)
+        if submitted:
+            submit_quiz_answer(user_answer)
+            st.rerun()
+        return
+    feedback = st.session_state.quiz_feedback
+    if feedback["is_correct"]:
+        st.success("정답입니다.")
+    else:
+        st.error(f"오답입니다. 정답: {feedback['answer']}")
+    if feedback["comment"]:
+        st.info(feedback["comment"])
+    button_text = "결과 보기" if current_number == total_count else "다음 문제"
+    if st.button(button_text, use_container_width=True, type="primary"):
+        advance_quiz()
+        st.rerun()
+
+
+def render_quiz_result_page() -> None:
+    render_logo(200)
+    total_count = len(st.session_state.quiz_bank)
+    summary_col, chart_col = st.columns([1.15, 0.85], gap="large")
+    with summary_col:
+        st.markdown(
+            f"""
+            <section class="form-shell">
+                <div class="form-band">
+                    <div class="form-title">퀴즈 결과</div>
+                    <div class="form-description">총 {total_count}문제 중 {st.session_state.quiz_score}문제를 맞혔습니다.</div>
+                </div>
+            </section>
+            """,
+            unsafe_allow_html=True,
+        )
+    with chart_col:
+        render_result_chart(st.session_state.quiz_score, total_count)
+    left, right = st.columns(2)
+    with left:
+        if st.button("다시 설정하기", use_container_width=True):
+            go_to("quiz_setup")
+            st.rerun()
+    with right:
+        if st.button("메인으로 돌아가기", use_container_width=True):
+            reset_quiz_state()
+            go_to("home")
+            st.rerun()
+
+
+def build_result_chart(score: int, total: int) -> alt.Chart:
+    breakdown = create_result_breakdown(score, total)
+    color_scale = alt.Scale(
+        domain=["맞춘 문제", "맞추지 못한 문제"],
+        range=["#b22308", "#e7bdb3"],
+    )
+    return alt.Chart(alt.Data(values=breakdown)).mark_arc(innerRadius=62).encode(
+        theta=alt.Theta("count:Q"),
+        color=alt.Color("label:N", scale=color_scale, legend=alt.Legend(title=None)),
+        tooltip=["label:N", "count:Q"],
+    )
+
+
+def render_result_chart(score: int, total: int) -> None:
+    st.markdown(
+        """
+        <section class="result-shell">
+            <div class="chart-band">
+                <div class="chart-title">정답 비율</div>
+                <div class="chart-caption">맞춘 문제와 놓친 문제를 한눈에 확인하세요.</div>
+            </div>
+        </section>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.altair_chart(build_result_chart(score, total), use_container_width=True)
 
 
 def render_login_page() -> None:
@@ -507,3 +727,9 @@ elif st.session_state.page == "login":
     render_login_page()
 elif st.session_state.page == "signup":
     render_signup_page()
+elif st.session_state.page == "quiz_setup":
+    render_quiz_setup_page()
+elif st.session_state.page == "quiz":
+    render_quiz_page()
+elif st.session_state.page == "quiz_result":
+    render_quiz_result_page()
