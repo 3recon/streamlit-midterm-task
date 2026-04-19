@@ -27,11 +27,11 @@ QUIZ_CSV = Path("data") / "quiz_list.csv"
 SURVEY_CSV = Path("data") / "survey_results.csv"
 LOGO_PATH = Path("kw_logo.png").resolve().as_posix()
 SURVEY_OPTIONS = [
-    "매우 만족함",
-    "만족함",
+    "매우 만족",
+    "만족",
     "보통",
-    "불만족함",
-    "매우 불만족함",
+    "불만족",
+    "매우 불만족",
 ]
 SURVEY_QUESTIONS = [
     ("communication", "퀴즈 문제 구성"),
