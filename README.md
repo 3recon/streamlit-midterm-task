@@ -20,18 +20,3 @@ streamlit run app.py --server.address 0.0.0.0 --server.port 8501
 ```text
 http://EC2_PUBLIC_IPV4:8501
 ```
-
-## 제출 영상 체크리스트
-
-- EC2 Public IPv4 주소가 화면에 보이도록 녹화
-- 브라우저 주소창에 `http://EC2_PUBLIC_IPV4:8501` 접속 장면 포함
-- Streamlit 앱 첫 화면과 학번, 이름 노출 확인
-- 회원가입 또는 로그인 후 퀴즈 버튼을 눌러 앱 조작
-- 앱 조작 중 EC2 터미널의 Streamlit 로그가 함께 보이도록 녹화
-
-## 제출물
-
-- GitHub repository 주소
-- YouTube 부분공개 영상 링크
-
-영상은 제출 기한 전에 업로드하고, 2026년 6월 20일까지 유지합니다.
